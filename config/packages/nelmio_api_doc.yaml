@@ -1,0 +1,11 @@
+# config/packages/nelmio_api_doc.yaml
+nelmio_api_doc:
+    documentation:
+        info:
+            title: MyTheresa Product Catalog API
+            description: Luxury e-commerce product catalog with promotional discounts
+            version: 1.0.0
+    areas:
+        path_patterns:
+            - ^/products
+            - ^/api

@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request: ~
+  workflow_dispatch: ~
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker images
+        uses: docker/bake-action@v6
+        with:
+          pull: true
+          load: true
+          targets: php
+          files: |
+            compose.yaml
+            compose.ci.yaml
+          set: |
+            *.cache-from=type=gha,scope=${{github.ref}}
+            *.cache-from=type=gha,scope=refs/heads/main
+            *.cache-to=type=gha,scope=${{github.ref}},mode=max
+
+      - name: Start services
+        run: docker compose -f compose.yaml -f compose.ci.yaml up -d --no-build
+
+      - name: Wait for database to be ready
+        run: |
+          echo "Waiting for database to be ready..."
+          timeout 120 bash -c 'until docker compose -f compose.yaml -f compose.ci.yaml exec -T database pg_isready -U app; do echo "Database not ready, waiting..."; sleep 5; done'
+          echo "Database is ready!"
+
+      - name: Install dependencies
+        run: |
+          # Retry composer install up to 3 times to handle network issues
+          for i in {1..3}; do
+            echo "Composer install attempt $i/3"
+            if docker compose -f compose.yaml -f compose.ci.yaml exec -T php composer install --prefer-dist --no-progress --optimize-autoloader; then
+              echo "Composer install succeeded on attempt $i"
+              break
+            else
+              echo "Composer install failed on attempt $i"
+              if [ $i -eq 3 ]; then
+                echo "All composer install attempts failed"
+                exit 1
+              fi
+              echo "Clearing composer cache and retrying in 10 seconds..."
+              docker compose -f compose.yaml -f compose.ci.yaml exec -T php composer clear-cache || true
+              sleep 10
+            fi
+          done
+
+      - name: Wait for services to be healthy
+        run: docker compose -f compose.yaml -f compose.ci.yaml up -d --no-build --wait
+
+      - name: Run migrations
+        run: docker compose -f compose.yaml -f compose.ci.yaml exec -T php bin/console doctrine:migrations:migrate --no-interaction
+
+      - name: Run PHPUnit
+        run: docker compose -f compose.yaml -f compose.ci.yaml exec -T php bin/phpunit
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker images
+        uses: docker/bake-action@v6
+        with:
+          pull: true
+          load: true
+          targets: php
+          files: |
+            compose.yaml
+            compose.ci.yaml
+          set: |
+            *.cache-from=type=gha,scope=${{github.ref}}
+            *.cache-from=type=gha,scope=refs/heads/main
+            *.cache-to=type=gha,scope=${{github.ref}},mode=max
+
+      - name: Start services
+        run: docker compose -f compose.yaml -f compose.ci.yaml up -d --no-build
+
+      - name: Wait for PHP container to be stable
+        run: |
+          echo "Waiting for PHP container to be stable..."
+          sleep 20
+          timeout 180 bash -c 'until docker compose -f compose.yaml -f compose.ci.yaml exec -T php php -v > /dev/null 2>&1; do echo "PHP container not ready, waiting..."; sleep 10; done'
+          echo "PHP container is ready!"
+
+      - name: Install dependencies
+        run: |
+          # Retry composer install up to 3 times to handle network issues
+          for i in {1..3}; do
+            echo "Composer install attempt $i/3"
+            if docker compose -f compose.yaml -f compose.ci.yaml exec -T php composer install --prefer-dist --no-progress; then
+              echo "Composer install succeeded on attempt $i"
+              break
+            else
+              echo "Composer install failed on attempt $i"
+              if [ $i -eq 3 ]; then
+                echo "All composer install attempts failed"
+                exit 1
+              fi
+              echo "Clearing composer cache and retrying in 10 seconds..."
+              docker compose -f compose.yaml -f compose.ci.yaml exec -T php composer clear-cache || true
+              sleep 10
+            fi
+          done
+
+
+      - name: Wait for services to be healthy
+        run: docker compose -f compose.yaml -f compose.ci.yaml up -d --no-build --wait
+
+      - name: Warm up dev cache for PHPStan
+        run: docker compose -f compose.yaml -f compose.ci.yaml exec -T php bin/console cache:warmup --env=dev
+
+      - name: Run PHPStan
+        run: docker compose -f compose.yaml -f compose.ci.yaml exec -T php vendor/bin/phpstan analyse --memory-limit=1G --error-format=github
+
+      - name: Run PHP CS Fixer (check only)
+        run: docker compose -f compose.yaml -f compose.ci.yaml exec -T php vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky yes

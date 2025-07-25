@@ -1,0 +1,28 @@
+includes:
+    - vendor/phpstan/phpstan-doctrine/extension.neon
+    - vendor/phpstan/phpstan-symfony/extension.neon
+    - vendor/phpstan/phpstan-symfony/rules.neon
+
+parameters:
+    doctrine:
+        objectManagerLoader: tests/object-manager.php
+
+    ignoreErrors:
+        - identifier: missingType.generics
+        - identifier: missingType.iterableValue
+        - identifier: new.static
+
+    level: 6
+    parallel:
+        processTimeout: 300.0
+
+    reportUnmatchedIgnoredErrors: true
+    paths:
+        - bin
+        - config
+        - public
+        - src
+        - tests
+
+    symfony:
+        containerXmlPath: var/cache/dev/App_KernelDevDebugContainer.xml

@@ -1,0 +1,60 @@
+doctrine:
+    dbal:
+        default_connection: catalog
+        connections:
+            catalog:
+                url: '%env(resolve:DATABASE_CATALOG_URL)%'
+                server_version: '16'
+                profiling_collect_backtrace: '%kernel.debug%'
+                use_savepoints: true
+
+        types:
+            product_id: App\Catalog\Infrastructure\Persistence\Doctrine\Types\ProductIdType
+            product_sku: App\Catalog\Infrastructure\Persistence\Doctrine\Types\SKUType
+            product_name: App\Catalog\Infrastructure\Persistence\Doctrine\Types\NameType
+            product_category: App\Catalog\Infrastructure\Persistence\Doctrine\Types\CategoryType
+            product_price: App\Catalog\Infrastructure\Persistence\Doctrine\Types\ProductPriceType
+
+    orm:
+        default_entity_manager: catalog
+        auto_generate_proxy_classes: true
+        enable_lazy_ghost_objects: true
+        entity_managers:
+            catalog:
+                connection: catalog
+                report_fields_where_declared: true
+                validate_xml_mapping: true
+                naming_strategy: doctrine.orm.naming_strategy.underscore_number_aware
+                auto_mapping: false
+                mappings:
+                    Catalog:
+                        is_bundle: false
+                        type: xml
+                        dir: '%kernel.project_dir%/src/Catalog/Infrastructure/Persistence/Doctrine/Mapping'
+                        prefix: 'App\Catalog\Domain\Entity'
+                        alias: Catalog
+
+when@test:
+    doctrine:
+        dbal:
+            dbname_suffix: '_test%env(default::TEST_TOKEN)%'
+
+when@prod:
+    doctrine:
+        orm:
+            auto_generate_proxy_classes: false
+            proxy_dir: '%kernel.build_dir%/doctrine/orm/Proxies'
+            query_cache_driver:
+                type: pool
+                pool: doctrine.system_cache_pool
+            result_cache_driver:
+                type: pool
+                pool: doctrine.result_cache_pool
+
+    framework:
+        cache:
+            pools:
+                doctrine.result_cache_pool:
+                    adapter: cache.app
+                doctrine.system_cache_pool:
+                    adapter: cache.system

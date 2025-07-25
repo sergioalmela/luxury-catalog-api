@@ -1,0 +1,56 @@
+# This file is the entry point to configure your own services.
+# Files in the packages/ subdirectory configure your dependencies.
+
+# Put parameters here that don't need to change on each machine where the app is deployed
+# https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
+parameters:
+
+services:
+    # default configuration for services in *this* file
+    _defaults:
+        autowire: true      # Automatically injects dependencies in your services.
+        autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+        public: false       # Services are private by default
+
+    # makes classes in src/ available to be used as services
+    # this creates a service per class whose id is the fully-qualified class name
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/*/Domain/Entity/'
+            - '../src/*/Domain/ValueObject/'
+            - '../src/*/Domain/Event/'
+    
+    # === QUERY HANDLERS ===
+    App\Catalog\Application\Query\GetProducts\GetProductsQueryHandler:
+        tags:
+            - { name: messenger.message_handler, bus: query.bus }
+
+    # === CONTROLLERS (must be public) ===
+    App\Catalog\Infrastructure\Http\Controller\:
+        resource: '../src/Catalog/Infrastructure/Http/Controller/'
+        tags: ['controller.service_arguments']
+        public: true
+
+    # === REPOSITORY BINDINGS ===
+    App\Catalog\Domain\Repository\ProductRepository:
+        class: App\Catalog\Infrastructure\Persistence\Doctrine\Repository\DoctrineProductRepository
+        arguments:
+            $entityManager: '@doctrine.orm.catalog_entity_manager'
+
+    # === BUS BINDINGS ===
+    App\Shared\Domain\Bus\Event\EventBus:
+        class: App\Shared\Infrastructure\Bus\Event\MessengerEventBus
+        arguments:
+            $messageBus: '@event.bus'
+            
+    App\Shared\Domain\Bus\Query\QueryBus:
+        class: App\Shared\Infrastructure\Bus\Query\MessengerQueryBus
+        arguments:
+            $messageBus: '@query.bus'
+
+    App\Shared\Infrastructure\Http\EventListener\ApiExceptionListener:
+        arguments:
+            $debug: '%kernel.debug%'
+        tags:
+            - { name: kernel.event_listener, event: kernel.exception, method: onKernelException, priority: 100 }
