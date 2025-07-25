@@ -76,6 +76,10 @@ COPY --link frankenphp/conf.d/20-app.dev.ini $PHP_INI_DIR/app.conf.d/
 COPY --link . ./
 RUN rm -Rf frankenphp/
 
+# Install dependencies after copying source code
+RUN set -eux; \
+	composer install --prefer-dist --no-progress --no-interaction
+
 CMD [ "frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile", "--watch" ]
 
 # Prod FrankenPHP image
